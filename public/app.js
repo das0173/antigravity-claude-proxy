@@ -14,6 +14,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('claudeConfig', window.Components.claudeConfig);
     Alpine.data('logsViewer', window.Components.logsViewer);
     Alpine.data('addAccountModal', window.Components.addAccountModal);
+    Alpine.data('apiKeys', window.Components.apiKeys);
 
     // View Loader Directive
     Alpine.directive('load-view', (el, { expression }, { evaluate }) => {

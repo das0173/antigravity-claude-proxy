@@ -202,6 +202,16 @@
                     </button>
                     <button
                         class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
+                        :class="{'active': $store.global.activeTab === 'apikeys'}"
+                        @click="$store.global.activeTab = 'apikeys'">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                        </svg>
+                        <span>API Keys</span>
+                    </button>
+                    <button
+                        class="nav-item flex items-center gap-3 px-6 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5"
                         :class="{'active': $store.global.activeTab === 'settings'}"
                         @click="$store.global.activeTab = 'settings'">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,6 +264,11 @@
 
             <!-- Settings -->
             <div x-show="$store.global.activeTab === 'settings'" x-load-view="'settings'"
+                x-transition:enter="fade-enter-active" x-transition:enter-start="fade-enter-from"
+                class="w-full"></div>
+
+            <!-- API Keys -->
+            <div x-show="$store.global.activeTab === 'apikeys'" x-load-view="'apikeys'"
                 x-transition:enter="fade-enter-active" x-transition:enter-start="fade-enter-from"
                 class="w-full"></div>
         </div>
@@ -427,6 +442,7 @@
     <script src="js/components/logs-viewer.js"></script>
     <script src="js/components/server-config.js"></script>
     <script src="js/components/add-account-modal.js"></script>
+    <script src="js/components/api-keys.js"></script>
     <!-- 4. App (registers Alpine components from window.Components) -->
     <script src="app.js"></script>
 </body>

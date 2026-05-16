@@ -21,6 +21,7 @@ import { clearThinkingSignatureCache } from './format/signature-cache.js';
 import { formatDuration } from './utils/helpers.js';
 import { logger } from './utils/logger.js';
 import usageStats from './modules/usage-stats.js';
+import { validateKey, incrementUsage, isMultiKeyEnabled, createKey, listKeys, revokeKey, enableKey, deleteKey, updateKey, getKeyUsage, getKeysSummary } from './modules/api-keys.js';
 
 // Parse fallback flag directly from command line args to avoid circular dependency
 const args = process.argv.slice(2);
@@ -80,12 +81,8 @@ app.use(cors());
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 
 // API Key authentication middleware for /v1/* endpoints
+// Supports both multi-key mode (SQLite) and legacy single API_KEY mode
 app.use('/v1', (req, res, next) => {
-    // Skip validation if apiKey is not configured
-    if (!config.apiKey) {
-        return next();
-    }
-
     const authHeader = req.headers['authorization'];
     const xApiKey = req.headers['x-api-key'];
 
@@ -96,15 +93,65 @@ app.use('/v1', (req, res, next) => {
         providedKey = xApiKey;
     }
 
-    if (!providedKey || providedKey !== config.apiKey) {
+    // Multi-key mode: validate against SQLite database
+    const multiKeyActive = isMultiKeyEnabled();
+    if (multiKeyActive) {
+        if (!providedKey) {
+            return res.status(401).json({
+                type: 'error',
+                error: {
+                    type: 'authentication_error',
+                    message: 'API key is required. Use Authorization: Bearer <key> or x-api-key header.'
+                }
+            });
+        }
+
+        // Check if it's an ag- prefixed key (multi-key)
+        if (providedKey.startsWith('ag-')) {
+            const result = validateKey(providedKey);
+            if (!result.valid) {
+                logger.warn(`[API] Rejected key from ${req.ip}: ${result.error}`);
+                const statusCode = result.error.includes('limit exceeded') ? 429 : 401;
+                return res.status(statusCode).json({
+                    type: 'error',
+                    error: {
+                        type: statusCode === 429 ? 'rate_limit_error' : 'authentication_error',
+                        message: result.error
+                    }
+                });
+            }
+            // Attach key info to request for logging/tracking
+            req.apiKeyInfo = result.keyInfo;
+            return next();
+        }
+
+        // Fallback: check legacy single API_KEY
+        if (config.apiKey && providedKey === config.apiKey) {
+            return next();
+        }
+
         logger.warn(`[API] Unauthorized request from ${req.ip}, invalid API key`);
         return res.status(401).json({
             type: 'error',
             error: {
                 type: 'authentication_error',
-                message: 'Invalid or missing API key'
+                message: 'Invalid API key'
             }
         });
+    }
+
+    // Legacy mode: single API_KEY (backwards compatible)
+    if (config.apiKey) {
+        if (!providedKey || providedKey !== config.apiKey) {
+            logger.warn(`[API] Unauthorized request from ${req.ip}, invalid API key`);
+            return res.status(401).json({
+                type: 'error',
+                error: {
+                    type: 'authentication_error',
+                    message: 'Invalid or missing API key'
+                }
+            });
+        }
     }
 
     next();
@@ -833,6 +880,11 @@ app.post('/v1/messages', async (req, res) => {
                 
                 res.end();
 
+                // Track API key usage
+                if (req.apiKeyInfo) {
+                    incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200 });
+                }
+
             } catch (error) {
                 // If we haven't sent headers yet, we can send a proper error status
                 if (!res.headersSent) {
@@ -863,6 +915,10 @@ app.post('/v1/messages', async (req, res) => {
         } else {
             // Handle non-streaming response
             const response = await sendMessage(request, accountManager, FALLBACK_ENABLED);
+            // Track API key usage
+            if (req.apiKeyInfo) {
+                incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200 });
+            }
             res.json(response);
         }
 
@@ -903,6 +959,126 @@ app.post('/v1/messages', async (req, res) => {
                 }
             });
         }
+    }
+});
+
+// ==========================================
+// API Key Management Endpoints
+// ==========================================
+
+/**
+ * GET /api/keys - List all API keys
+ */
+app.get('/api/keys', (req, res) => {
+    try {
+        const keys = listKeys();
+        const summary = getKeysSummary();
+        res.json({ status: 'ok', keys, summary });
+    } catch (error) {
+        logger.error('[API Keys] Error listing keys:', error);
+        res.status(500).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * POST /api/keys - Create a new API key
+ */
+app.post('/api/keys', (req, res) => {
+    try {
+        const { name, maxRequestsPerDay, maxRequestsPerMonth, expiresAt } = req.body;
+        const result = createKey({
+            name,
+            maxRequestsPerDay: maxRequestsPerDay || 100,
+            maxRequestsPerMonth: maxRequestsPerMonth || 3000,
+            expiresAt: expiresAt || null
+        });
+        res.json({ status: 'ok', ...result });
+    } catch (error) {
+        logger.error('[API Keys] Error creating key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * PATCH /api/keys/:id - Update key settings
+ */
+app.patch('/api/keys/:id', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        updateKey(id, req.body);
+        res.json({ status: 'ok', message: `Key ${id} updated` });
+    } catch (error) {
+        logger.error('[API Keys] Error updating key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * POST /api/keys/:id/revoke - Revoke (disable) a key
+ */
+app.post('/api/keys/:id/revoke', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        revokeKey(id);
+        res.json({ status: 'ok', message: `Key ${id} revoked` });
+    } catch (error) {
+        logger.error('[API Keys] Error revoking key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * POST /api/keys/:id/enable - Enable a key
+ */
+app.post('/api/keys/:id/enable', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        enableKey(id);
+        res.json({ status: 'ok', message: `Key ${id} enabled` });
+    } catch (error) {
+        logger.error('[API Keys] Error enabling key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * DELETE /api/keys/:id - Delete a key permanently
+ */
+app.delete('/api/keys/:id', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        deleteKey(id);
+        res.json({ status: 'ok', message: `Key ${id} deleted` });
+    } catch (error) {
+        logger.error('[API Keys] Error deleting key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * GET /api/keys/:id/usage - Get usage stats for a key
+ */
+app.get('/api/keys/:id/usage', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const days = parseInt(req.query.days) || 7;
+        const usage = getKeyUsage(id, days);
+        res.json({ status: 'ok', ...usage });
+    } catch (error) {
+        logger.error('[API Keys] Error getting usage:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * GET /api/keys/summary - Get summary stats
+ */
+app.get('/api/keys-summary', (req, res) => {
+    try {
+        const summary = getKeysSummary();
+        res.json({ status: 'ok', ...summary });
+    } catch (error) {
+        res.status(500).json({ status: 'error', error: error.message });
     }
 });
 

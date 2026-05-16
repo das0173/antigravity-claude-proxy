@@ -1,0 +1,280 @@
+<div x-data="apiKeys" class="p-6 max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-white flex items-center gap-3">
+                <svg class="w-7 h-7 text-neon-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                API Keys
+            </h1>
+            <p class="text-sm text-gray-500 mt-1">Manage API keys for multi-user access</p>
+        </div>
+        <button @click="showCreateModal = true"
+            class="btn btn-sm bg-neon-purple hover:bg-neon-purple/80 text-white border-neon-purple/50 gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Create Key
+        </button>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-space-900 border border-space-border rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Total Keys</div>
+            <div class="text-2xl font-bold text-white mt-1" x-text="summary.totalKeys || 0"></div>
+        </div>
+        <div class="bg-space-900 border border-space-border rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Active</div>
+            <div class="text-2xl font-bold text-neon-green mt-1" x-text="summary.activeKeys || 0"></div>
+        </div>
+        <div class="bg-space-900 border border-space-border rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Requests Today</div>
+            <div class="text-2xl font-bold text-neon-cyan mt-1" x-text="summary.requestsToday || 0"></div>
+        </div>
+        <div class="bg-space-900 border border-space-border rounded-lg p-4">
+            <div class="text-xs text-gray-500 uppercase tracking-wider">Requests (Month)</div>
+            <div class="text-2xl font-bold text-neon-purple mt-1" x-text="summary.requestsThisMonth || 0"></div>
+        </div>
+    </div>
+
+    <!-- Created Key Alert (shown once after creation) -->
+    <template x-if="createdKey">
+        <div class="alert bg-neon-green/10 border border-neon-green/30 mb-6">
+            <div class="flex flex-col gap-2 w-full">
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-neon-green flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="text-sm font-bold text-neon-green">Key created! Copy it now — it won't be shown again.</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <code class="flex-1 bg-black/50 text-neon-green font-mono text-sm px-3 py-2 rounded border border-neon-green/20 break-all" x-text="createdKey"></code>
+                    <button @click="copyKey()" class="btn btn-sm btn-ghost text-neon-green hover:bg-neon-green/10">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Copy
+                    </button>
+                    <button @click="createdKey = null" class="btn btn-sm btn-ghost text-gray-500">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Keys Table -->
+    <div class="bg-space-900 border border-space-border rounded-lg overflow-hidden">
+        <template x-if="keys.length === 0 && !loading">
+            <div class="flex flex-col items-center justify-center py-16 text-gray-500">
+                <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                <p class="text-sm">No API keys yet</p>
+                <p class="text-xs mt-1">Create your first key to start selling access</p>
+            </div>
+        </template>
+
+        <template x-if="loading">
+            <div class="flex items-center justify-center py-16">
+                <span class="loading loading-spinner loading-md text-neon-purple"></span>
+            </div>
+        </template>
+
+        <template x-if="keys.length > 0">
+            <div class="overflow-x-auto">
+                <table class="table table-sm w-full">
+                    <thead>
+                        <tr class="border-b border-space-border text-gray-500 text-xs uppercase">
+                            <th class="font-medium">Name</th>
+                            <th class="font-medium">Key</th>
+                            <th class="font-medium">Status</th>
+                            <th class="font-medium text-center">Today</th>
+                            <th class="font-medium text-center">Month</th>
+                            <th class="font-medium text-center">Total</th>
+                            <th class="font-medium">Created</th>
+                            <th class="font-medium text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="key in keys" :key="key.id">
+                            <tr class="border-b border-space-border/50 hover:bg-white/[0.02] transition-colors">
+                                <td class="font-medium text-white" x-text="key.name"></td>
+                                <td>
+                                    <code class="text-xs font-mono text-gray-400 bg-black/30 px-2 py-0.5 rounded" x-text="key.keyPrefix"></code>
+                                </td>
+                                <td>
+                                    <span class="badge badge-sm" :class="getStatusBadge(key.status)" x-text="getStatusLabel(key.status)"></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="text-sm" x-text="key.requestsToday + '/' + key.maxRequestsPerDay"
+                                        :class="key.requestsToday >= key.maxRequestsPerDay ? 'text-red-400' : 'text-gray-300'"></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="text-sm" x-text="key.requestsThisMonth + '/' + key.maxRequestsPerMonth"
+                                        :class="key.requestsThisMonth >= key.maxRequestsPerMonth ? 'text-red-400' : 'text-gray-300'"></span>
+                                </td>
+                                <td class="text-center text-sm text-gray-400" x-text="key.totalRequests"></td>
+                                <td class="text-xs text-gray-500" x-text="formatDate(key.createdAt)"></td>
+                                <td class="text-right">
+                                    <div class="flex items-center justify-end gap-1">
+                                        <button @click="viewUsage(key.id, key.name)" class="btn btn-xs btn-ghost text-neon-cyan" title="View Usage">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                            </svg>
+                                        </button>
+                                        <template x-if="key.enabled">
+                                            <button @click="revokeKey(key.id)" class="btn btn-xs btn-ghost text-yellow-500" title="Revoke">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                </svg>
+                                            </button>
+                                        </template>
+                                        <template x-if="!key.enabled">
+                                            <button @click="enableKeyAction(key.id)" class="btn btn-xs btn-ghost text-neon-green" title="Enable">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </button>
+                                        </template>
+                                        <button @click="deleteKeyAction(key.id)" class="btn btn-xs btn-ghost text-red-500" title="Delete">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </template>
+    </div>
+
+    <!-- How to Use -->
+    <div class="mt-6 bg-space-900 border border-space-border rounded-lg p-5">
+        <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <svg class="w-4 h-4 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            How to Use
+        </h3>
+        <div class="text-xs text-gray-400 font-mono space-y-2">
+            <p>Your users should configure their Claude Code CLI with:</p>
+            <div class="bg-black/50 rounded p-3 border border-space-border/30">
+                <code class="text-neon-cyan">ANTHROPIC_BASE_URL</code>=<span class="text-gray-300" x-text="window.location.origin"></span><br>
+                <code class="text-neon-cyan">ANTHROPIC_AUTH_TOKEN</code>=<span class="text-gray-300">ag-xxxxxxxxxxxxx</span>
+            </div>
+            <p class="text-gray-500">Users send their API key as the auth token. The proxy validates it and tracks usage automatically.</p>
+        </div>
+    </div>
+
+    <!-- Create Key Modal -->
+    <dialog class="modal" :class="{ 'modal-open': showCreateModal }">
+        <div class="modal-box bg-space-900 border border-space-border text-gray-300 max-w-md">
+            <h3 class="font-bold text-lg text-white mb-4">Create API Key</h3>
+            <div class="flex flex-col gap-4">
+                <div>
+                    <label class="label"><span class="label-text text-gray-400">Client Name *</span></label>
+                    <input type="text" x-model="newKey.name" placeholder="e.g. John Doe"
+                        class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Daily Limit</span></label>
+                        <input type="number" x-model="newKey.maxRequestsPerDay" min="1"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    </div>
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Monthly Limit</span></label>
+                        <input type="number" x-model="newKey.maxRequestsPerMonth" min="1"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    </div>
+                </div>
+                <div>
+                    <label class="label"><span class="label-text text-gray-400">Expires At (optional)</span></label>
+                    <input type="date" x-model="newKey.expiresAt"
+                        class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                </div>
+            </div>
+            <div class="modal-action">
+                <button @click="showCreateModal = false" class="btn btn-ghost">Cancel</button>
+                <button @click="createKey()" class="btn bg-neon-purple hover:bg-neon-purple/80 text-white border-neon-purple/50">
+                    Create Key
+                </button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button @click="showCreateModal = false">close</button>
+        </form>
+    </dialog>
+
+    <!-- Usage Modal -->
+    <dialog class="modal" :class="{ 'modal-open': showUsageModal }">
+        <div class="modal-box bg-space-900 border border-space-border text-gray-300 max-w-lg">
+            <h3 class="font-bold text-lg text-white mb-4" x-text="'Usage: ' + usageKeyName"></h3>
+            <template x-if="usageData">
+                <div class="space-y-4">
+                    <!-- Stats -->
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-black/30 rounded p-3 text-center">
+                            <div class="text-xs text-gray-500">Today</div>
+                            <div class="text-lg font-bold text-white" x-text="usageData.requestsToday"></div>
+                        </div>
+                        <div class="bg-black/30 rounded p-3 text-center">
+                            <div class="text-xs text-gray-500">Month</div>
+                            <div class="text-lg font-bold text-white" x-text="usageData.requestsThisMonth"></div>
+                        </div>
+                        <div class="bg-black/30 rounded p-3 text-center">
+                            <div class="text-xs text-gray-500">Total</div>
+                            <div class="text-lg font-bold text-white" x-text="usageData.totalRequests"></div>
+                        </div>
+                    </div>
+
+                    <!-- By Model -->
+                    <template x-if="Object.keys(usageData.byModel || {}).length > 0">
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-400 mb-2">By Model (7 days)</h4>
+                            <div class="space-y-1">
+                                <template x-for="[model, count] in Object.entries(usageData.byModel)" :key="model">
+                                    <div class="flex justify-between text-xs bg-black/20 rounded px-3 py-2">
+                                        <span class="text-gray-300 font-mono" x-text="model"></span>
+                                        <span class="text-neon-cyan font-bold" x-text="count"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- By Day -->
+                    <template x-if="Object.keys(usageData.byDay || {}).length > 0">
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-400 mb-2">By Day</h4>
+                            <div class="space-y-1">
+                                <template x-for="[day, count] in Object.entries(usageData.byDay).sort()" :key="day">
+                                    <div class="flex justify-between text-xs bg-black/20 rounded px-3 py-2">
+                                        <span class="text-gray-300" x-text="day"></span>
+                                        <span class="text-neon-purple font-bold" x-text="count"></span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+            <div class="modal-action">
+                <button @click="showUsageModal = false; usageData = null" class="btn btn-ghost">Close</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button @click="showUsageModal = false; usageData = null">close</button>
+        </form>
+    </dialog>
+</div>
