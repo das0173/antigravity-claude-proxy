@@ -132,15 +132,16 @@ export const ANTIGRAVITY_AUTH_PORT = 9092;
 export const DEFAULT_PORT = config?.port || 8080;
 
 // Multi-account configuration
+// Uses DATA_DIR env var for Railway Volume persistence
 export const ACCOUNT_CONFIG_PATH = config?.accountConfigPath || join(
-    homedir(),
-    '.config/antigravity-proxy/accounts.json'
+    process.env.DATA_DIR || join(homedir(), '.config/antigravity-proxy'),
+    'accounts.json'
 );
 
 // Usage history persistence path
 export const USAGE_HISTORY_PATH = join(
-    homedir(),
-    '.config/antigravity-proxy/usage-history.json'
+    process.env.DATA_DIR || join(homedir(), '.config/antigravity-proxy'),
+    'usage-history.json'
 );
 
 // Antigravity app database path (for legacy single-account token extraction)

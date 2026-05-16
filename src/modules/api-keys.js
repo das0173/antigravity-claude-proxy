@@ -15,8 +15,8 @@ import os from 'os';
 import fs from 'fs';
 import { logger } from '../utils/logger.js';
 
-// Database location
-const CONFIG_DIR = path.join(os.homedir(), '.antigravity-claude-proxy');
+// Database location - uses DATA_DIR for Railway Volume persistence
+const CONFIG_DIR = process.env.DATA_DIR || path.join(os.homedir(), '.config', 'antigravity-proxy');
 const DB_PATH = path.join(CONFIG_DIR, 'api-keys.db');
 
 // Ensure config directory exists
