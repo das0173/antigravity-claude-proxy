@@ -410,6 +410,7 @@ app.get('/account-limits', async (req, res) => {
                         email: account.email,
                         status: 'invalid',
                         error: account.invalidReason,
+                        verifyUrl: account.verifyUrl || null,
                         models: {}
                     };
                 }

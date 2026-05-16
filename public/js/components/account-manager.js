@@ -145,6 +145,12 @@ window.Components.accountManager = () => ({
         }
     },
 
+    copyVerifyUrl(url) {
+        if (!url) return;
+        navigator.clipboard.writeText(url);
+        Alpine.store('global').showToast('Link copiado! Cole no navegador onde a conta está logada.', 'success', 5000);
+    },
+
     confirmDeleteAccount(email) {
         this.deleteTarget = email;
         document.getElementById('delete_account_modal').showModal();

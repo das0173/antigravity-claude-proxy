@@ -213,6 +213,13 @@
                                     x-text="$store.global.t('fix')">
                                     FIX
                                 </button>
+                                <!-- Copy Link Button -->
+                                <button x-show="acc.status === 'invalid' && acc.verifyUrl"
+                                    class="px-3 py-1 text-[10px] font-bold font-mono uppercase tracking-wider rounded bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20 border border-neon-cyan/30 hover:border-neon-cyan/50 transition-all"
+                                    @click="copyVerifyUrl(acc.verifyUrl)"
+                                    title="Copiar link de verificação">
+                                    COPIAR LINK
+                                </button>
                                 <!-- Appeal Button (banned accounts only) -->
                                 <a x-show="acc.status === 'banned'"
                                    href="mailto:gemini-code-assist-user-feedback@google.com"
