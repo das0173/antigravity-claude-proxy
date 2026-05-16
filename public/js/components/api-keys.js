@@ -10,13 +10,25 @@ window.Components.apiKeys = () => ({
     showCreateModal: false,
     createdKey: null, // Full key shown only once after creation
 
-    // Create form
+    // Create/Edit form
     newKey: {
+        id: null,
         name: '',
-        maxRequestsPerDay: 100,
-        maxRequestsPerMonth: 3000,
-        expiresAt: ''
+        notes: '',
+        maxRequestsPerWindow: 120,
+        windowHours: 3,
+        maxRequestsPerDay: 0,
+        maxRequestsPerMonth: 0,
+        maxRpm: 0,
+        maxDevices: 1,
+        expiresAt: '',
+        webhookUrl: ''
     },
+    isEditing: false,
+
+    // Viewing full key
+    viewingKeyId: null,
+    viewingKeyFull: '',
 
     // Usage modal
     showUsageModal: false,
@@ -44,32 +56,80 @@ window.Components.apiKeys = () => ({
         }
     },
 
-    async createKey() {
+    openCreateModal() {
+        this.isEditing = false;
+        this.newKey = {
+            id: null,
+            name: '',
+            notes: '',
+            maxRequestsPerWindow: 120,
+            windowHours: 3,
+            maxRequestsPerDay: 0,
+            maxRequestsPerMonth: 0,
+            maxRpm: 0,
+            maxDevices: 1,
+            expiresAt: '',
+            webhookUrl: ''
+        };
+        this.showCreateModal = true;
+    },
+
+    openEditModal(key) {
+        this.isEditing = true;
+        this.newKey = {
+            id: key.id,
+            name: key.name,
+            notes: key.notes || '',
+            maxRequestsPerWindow: key.maxRequestsPerWindow || 0,
+            windowHours: key.windowHours || 0,
+            maxRequestsPerDay: key.maxRequestsPerDay || 0,
+            maxRequestsPerMonth: key.maxRequestsPerMonth || 0,
+            maxRpm: key.maxRpm || 0,
+            maxDevices: key.maxDevices || 1,
+            expiresAt: key.expiresAt ? key.expiresAt.split('T')[0] : '',
+            webhookUrl: key.webhookUrl || ''
+        };
+        this.showCreateModal = true;
+    },
+
+    async saveKey() {
         if (!this.newKey.name.trim()) {
             Alpine.store('global').showToast('Name is required', 'error');
             return;
         }
         try {
             const password = Alpine.store('global').webuiPassword;
-            const { response } = await window.utils.request('/api/keys', {
-                method: 'POST',
+            const url = this.isEditing ? `/api/keys/${this.newKey.id}` : '/api/keys';
+            const method = this.isEditing ? 'PATCH' : 'POST';
+            
+            const bodyPayload = {
+                name: this.newKey.name,
+                notes: this.newKey.notes,
+                maxRequestsPerWindow: parseInt(this.newKey.maxRequestsPerWindow) || 0,
+                windowHours: parseInt(this.newKey.windowHours) || 0,
+                maxRequestsPerDay: parseInt(this.newKey.maxRequestsPerDay) || 0,
+                maxRequestsPerMonth: parseInt(this.newKey.maxRequestsPerMonth) || 0,
+                maxRpm: parseInt(this.newKey.maxRpm) || 0,
+                maxDevices: parseInt(this.newKey.maxDevices) || 1,
+                expiresAt: this.newKey.expiresAt || null,
+                webhookUrl: this.newKey.webhookUrl
+            };
+
+            const { response } = await window.utils.request(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: this.newKey.name,
-                    maxRequestsPerDay: parseInt(this.newKey.maxRequestsPerDay) || 100,
-                    maxRequestsPerMonth: parseInt(this.newKey.maxRequestsPerMonth) || 3000,
-                    expiresAt: this.newKey.expiresAt || null
-                })
+                body: JSON.stringify(bodyPayload)
             }, password);
             const data = await response.json();
             if (data.status === 'ok') {
-                this.createdKey = data.key; // Show full key once
+                if (!this.isEditing) {
+                    this.createdKey = data.key; // Show full key once on creation
+                }
                 this.showCreateModal = false;
-                this.newKey = { name: '', maxRequestsPerDay: 100, maxRequestsPerMonth: 3000, expiresAt: '' };
-                Alpine.store('global').showToast(`Key "${data.name}" created!`, 'success');
+                Alpine.store('global').showToast(`Key "${this.newKey.name}" ${this.isEditing ? 'updated' : 'created'}!`, 'success');
                 this.fetchKeys();
             } else {
-                Alpine.store('global').showToast(data.error || 'Failed to create key', 'error');
+                Alpine.store('global').showToast(data.error || 'Failed to save key', 'error');
             }
         } catch (e) {
             Alpine.store('global').showToast('Error: ' + e.message, 'error');
@@ -93,6 +153,18 @@ window.Components.apiKeys = () => ({
             const password = Alpine.store('global').webuiPassword;
             await window.utils.request(`/api/keys/${id}/enable`, { method: 'POST' }, password);
             Alpine.store('global').showToast('Key enabled', 'success');
+            this.fetchKeys();
+        } catch (e) {
+            Alpine.store('global').showToast('Error: ' + e.message, 'error');
+        }
+    },
+
+    async resetDevices(id) {
+        if (!confirm('Reset all connected devices for this key?')) return;
+        try {
+            const password = Alpine.store('global').webuiPassword;
+            await window.utils.request(`/api/keys/${id}/reset-devices`, { method: 'POST' }, password);
+            Alpine.store('global').showToast('Devices reset successfully', 'success');
             this.fetchKeys();
         } catch (e) {
             Alpine.store('global').showToast('Error: ' + e.message, 'error');
@@ -133,11 +205,29 @@ window.Components.apiKeys = () => ({
         }
     },
 
+    copySpecificKey(fullKey) {
+        if (fullKey) {
+            navigator.clipboard.writeText(fullKey);
+            Alpine.store('global').showToast('Key copied!', 'success');
+        }
+    },
+
+    toggleKeyVisibility(key) {
+        if (this.viewingKeyId === key.id) {
+            this.viewingKeyId = null;
+            this.viewingKeyFull = '';
+        } else {
+            this.viewingKeyId = key.id;
+            this.viewingKeyFull = key.keyFull;
+        }
+    },
+
     getStatusBadge(status) {
         const badges = {
             active: 'badge-success',
             disabled: 'badge-error',
             expired: 'badge-warning',
+            window_limit: 'badge-warning',
             daily_limit: 'badge-warning',
             monthly_limit: 'badge-warning'
         };
@@ -149,6 +239,7 @@ window.Components.apiKeys = () => ({
             active: 'Active',
             disabled: 'Disabled',
             expired: 'Expired',
+            window_limit: 'Window Limit',
             daily_limit: 'Daily Limit',
             monthly_limit: 'Monthly Limit'
         };

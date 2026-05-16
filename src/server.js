@@ -21,7 +21,7 @@ import { clearThinkingSignatureCache } from './format/signature-cache.js';
 import { formatDuration } from './utils/helpers.js';
 import { logger } from './utils/logger.js';
 import usageStats from './modules/usage-stats.js';
-import { validateKey, incrementUsage, isMultiKeyEnabled, createKey, listKeys, revokeKey, enableKey, deleteKey, updateKey, getKeyUsage, getKeysSummary } from './modules/api-keys.js';
+import { validateKey, incrementUsage, isMultiKeyEnabled, createKey, listKeys, revokeKey, enableKey, deleteKey, updateKey, getKeyUsage, getKeysSummary, getDeviceId, resetDevices } from './modules/api-keys.js';
 
 // Parse fallback flag directly from command line args to avoid circular dependency
 const args = process.argv.slice(2);
@@ -108,10 +108,12 @@ app.use('/v1', (req, res, next) => {
 
         // Check if it's an ag- prefixed key (multi-key)
         if (providedKey.startsWith('ag-')) {
-            const result = validateKey(providedKey);
+            const deviceId = getDeviceId(req);
+            const result = validateKey(providedKey, deviceId);
             if (!result.valid) {
                 logger.warn(`[API] Rejected key from ${req.ip}: ${result.error}`);
-                const statusCode = result.error.includes('limit exceeded') ? 429 : 401;
+                const isLimit = result.error.includes('limit') || result.error.includes('Rate') || result.error.includes('Device');
+                const statusCode = isLimit ? 429 : 401;
                 return res.status(statusCode).json({
                     type: 'error',
                     error: {
@@ -120,8 +122,9 @@ app.use('/v1', (req, res, next) => {
                     }
                 });
             }
-            // Attach key info to request for logging/tracking
+            // Attach key info + deviceId to request for logging/tracking
             req.apiKeyInfo = result.keyInfo;
+            req.deviceId = deviceId;
             return next();
         }
 
@@ -882,7 +885,7 @@ app.post('/v1/messages', async (req, res) => {
 
                 // Track API key usage
                 if (req.apiKeyInfo) {
-                    incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200 });
+                    incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200, deviceId: req.deviceId });
                 }
 
             } catch (error) {
@@ -917,7 +920,7 @@ app.post('/v1/messages', async (req, res) => {
             const response = await sendMessage(request, accountManager, FALLBACK_ENABLED);
             // Track API key usage
             if (req.apiKeyInfo) {
-                incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200 });
+                incrementUsage(req.apiKeyInfo.id, { model: modelId, endpoint: '/v1/messages', statusCode: 200, deviceId: req.deviceId });
             }
             res.json(response);
         }
@@ -985,12 +988,18 @@ app.get('/api/keys', (req, res) => {
  */
 app.post('/api/keys', (req, res) => {
     try {
-        const { name, maxRequestsPerDay, maxRequestsPerMonth, expiresAt } = req.body;
+        const { name, notes, maxRequestsPerWindow, windowHours, maxRequestsPerDay, maxRequestsPerMonth, maxRpm, maxDevices, expiresAt, webhookUrl } = req.body;
         const result = createKey({
             name,
-            maxRequestsPerDay: maxRequestsPerDay || 100,
-            maxRequestsPerMonth: maxRequestsPerMonth || 3000,
-            expiresAt: expiresAt || null
+            notes: notes || '',
+            maxRequestsPerWindow: parseInt(maxRequestsPerWindow) || 120,
+            windowHours: parseInt(windowHours) || 3,
+            maxRequestsPerDay: parseInt(maxRequestsPerDay) || 0,
+            maxRequestsPerMonth: parseInt(maxRequestsPerMonth) || 0,
+            maxRpm: parseInt(maxRpm) || 0,
+            maxDevices: parseInt(maxDevices) || 1,
+            expiresAt: expiresAt || null,
+            webhookUrl: webhookUrl || ''
         });
         res.json({ status: 'ok', ...result });
     } catch (error) {
@@ -1037,6 +1046,20 @@ app.post('/api/keys/:id/enable', (req, res) => {
         res.json({ status: 'ok', message: `Key ${id} enabled` });
     } catch (error) {
         logger.error('[API Keys] Error enabling key:', error);
+        res.status(400).json({ status: 'error', error: error.message });
+    }
+});
+
+/**
+ * POST /api/keys/:id/reset-devices - Reset active devices for a key
+ */
+app.post('/api/keys/:id/reset-devices', (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        resetDevices(id);
+        res.json({ status: 'ok', message: `Devices for key ${id} reset` });
+    } catch (error) {
+        logger.error('[API Keys] Error resetting devices:', error);
         res.status(400).json({ status: 'error', error: error.message });
     }
 });

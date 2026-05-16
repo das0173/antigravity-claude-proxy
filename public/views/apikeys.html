@@ -9,9 +9,9 @@
                 </svg>
                 API Keys
             </h1>
-            <p class="text-sm text-gray-500 mt-1">Manage API keys for multi-user access</p>
+            <p class="text-sm text-gray-500 mt-1">Manage API keys, limits, and connected devices</p>
         </div>
-        <button @click="showCreateModal = true"
+        <button @click="openCreateModal()"
             class="btn btn-sm bg-neon-purple hover:bg-neon-purple/80 text-white border-neon-purple/50 gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -92,61 +92,86 @@
                 <table class="table table-sm w-full">
                     <thead>
                         <tr class="border-b border-space-border text-gray-500 text-xs uppercase">
-                            <th class="font-medium">Name</th>
+                            <th class="font-medium">Client</th>
                             <th class="font-medium">Key</th>
                             <th class="font-medium">Status</th>
-                            <th class="font-medium text-center">Today</th>
+                            <th class="font-medium text-center">Window</th>
                             <th class="font-medium text-center">Month</th>
-                            <th class="font-medium text-center">Total</th>
-                            <th class="font-medium">Created</th>
+                            <th class="font-medium text-center">Devices</th>
                             <th class="font-medium text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template x-for="key in keys" :key="key.id">
                             <tr class="border-b border-space-border/50 hover:bg-white/[0.02] transition-colors">
-                                <td class="font-medium text-white" x-text="key.name"></td>
                                 <td>
-                                    <code class="text-xs font-mono text-gray-400 bg-black/30 px-2 py-0.5 rounded" x-text="key.keyPrefix"></code>
+                                    <div class="font-medium text-white" x-text="key.name"></div>
+                                    <div class="text-[10px] text-gray-500 max-w-[150px] truncate" x-show="key.notes" x-text="key.notes" :title="key.notes"></div>
+                                </td>
+                                <td>
+                                    <div class="flex items-center gap-1">
+                                        <code class="text-xs font-mono text-gray-400 bg-black/30 px-2 py-0.5 rounded cursor-pointer hover:text-white"
+                                              @click="toggleKeyVisibility(key)"
+                                              x-text="viewingKeyId === key.id ? key.keyFull : key.keyPrefix">
+                                        </code>
+                                        <button x-show="viewingKeyId === key.id" @click="copySpecificKey(key.keyFull)" class="text-neon-cyan hover:text-white p-1">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                        </button>
+                                    </div>
                                 </td>
                                 <td>
                                     <span class="badge badge-sm" :class="getStatusBadge(key.status)" x-text="getStatusLabel(key.status)"></span>
                                 </td>
                                 <td class="text-center">
-                                    <span class="text-sm" x-text="key.requestsToday + '/' + key.maxRequestsPerDay"
-                                        :class="key.requestsToday >= key.maxRequestsPerDay ? 'text-red-400' : 'text-gray-300'"></span>
+                                    <template x-if="key.windowHours > 0">
+                                        <div class="flex flex-col items-center">
+                                            <span class="text-sm" x-text="key.requestsInWindow + '/' + key.maxRequestsPerWindow"
+                                                :class="key.requestsInWindow >= key.maxRequestsPerWindow ? 'text-red-400' : 'text-gray-300'"></span>
+                                            <span class="text-[10px] text-gray-500" x-text="key.windowHours + 'h reset'"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="key.windowHours === 0">
+                                        <span class="text-gray-500">-</span>
+                                    </template>
                                 </td>
                                 <td class="text-center">
-                                    <span class="text-sm" x-text="key.requestsThisMonth + '/' + key.maxRequestsPerMonth"
-                                        :class="key.requestsThisMonth >= key.maxRequestsPerMonth ? 'text-red-400' : 'text-gray-300'"></span>
+                                    <template x-if="key.maxRequestsPerMonth > 0">
+                                        <span class="text-sm" x-text="key.requestsThisMonth + '/' + key.maxRequestsPerMonth"
+                                            :class="key.requestsThisMonth >= key.maxRequestsPerMonth ? 'text-red-400' : 'text-gray-300'"></span>
+                                    </template>
+                                    <template x-if="key.maxRequestsPerMonth === 0">
+                                        <span class="text-gray-500">-</span>
+                                    </template>
                                 </td>
-                                <td class="text-center text-sm text-gray-400" x-text="key.totalRequests"></td>
-                                <td class="text-xs text-gray-500" x-text="formatDate(key.createdAt)"></td>
+                                <td class="text-center">
+                                    <div class="flex flex-col items-center">
+                                        <span class="text-sm" x-text="key.activeDevices + '/' + key.maxDevices"
+                                            :class="key.activeDevices >= key.maxDevices ? 'text-yellow-500' : 'text-gray-300'"></span>
+                                    </div>
+                                </td>
                                 <td class="text-right">
                                     <div class="flex items-center justify-end gap-1">
+                                        <button @click="resetDevices(key.id)" class="btn btn-xs btn-ghost text-purple-400" title="Reset Devices">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                                        </button>
                                         <button @click="viewUsage(key.id, key.name)" class="btn btn-xs btn-ghost text-neon-cyan" title="View Usage">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                            </svg>
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                        </button>
+                                        <button @click="openEditModal(key)" class="btn btn-xs btn-ghost text-gray-300" title="Edit">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                         </button>
                                         <template x-if="key.enabled">
                                             <button @click="revokeKey(key.id)" class="btn btn-xs btn-ghost text-yellow-500" title="Revoke">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                                </svg>
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
                                             </button>
                                         </template>
                                         <template x-if="!key.enabled">
                                             <button @click="enableKeyAction(key.id)" class="btn btn-xs btn-ghost text-neon-green" title="Enable">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             </button>
                                         </template>
                                         <button @click="deleteKeyAction(key.id)" class="btn btn-xs btn-ghost text-red-500" title="Delete">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
                                     </div>
                                 </td>
@@ -158,56 +183,70 @@
         </template>
     </div>
 
-    <!-- How to Use -->
-    <div class="mt-6 bg-space-900 border border-space-border rounded-lg p-5">
-        <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
-            <svg class="w-4 h-4 text-neon-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            How to Use
-        </h3>
-        <div class="text-xs text-gray-400 font-mono space-y-2">
-            <p>Your users should configure their Claude Code CLI with:</p>
-            <div class="bg-black/50 rounded p-3 border border-space-border/30">
-                <code class="text-neon-cyan">ANTHROPIC_BASE_URL</code>=<span class="text-gray-300" x-text="window.location.origin"></span><br>
-                <code class="text-neon-cyan">ANTHROPIC_AUTH_TOKEN</code>=<span class="text-gray-300">ag-xxxxxxxxxxxxx</span>
-            </div>
-            <p class="text-gray-500">Users send their API key as the auth token. The proxy validates it and tracks usage automatically.</p>
-        </div>
-    </div>
-
-    <!-- Create Key Modal -->
+    <!-- Create/Edit Key Modal -->
     <dialog class="modal" :class="{ 'modal-open': showCreateModal }">
-        <div class="modal-box bg-space-900 border border-space-border text-gray-300 max-w-md">
-            <h3 class="font-bold text-lg text-white mb-4">Create API Key</h3>
+        <div class="modal-box bg-space-900 border border-space-border text-gray-300 max-w-lg">
+            <h3 class="font-bold text-lg text-white mb-4" x-text="isEditing ? 'Edit API Key' : 'Nova Key'"></h3>
             <div class="flex flex-col gap-4">
                 <div>
-                    <label class="label"><span class="label-text text-gray-400">Client Name *</span></label>
-                    <input type="text" x-model="newKey.name" placeholder="e.g. John Doe"
+                    <label class="label"><span class="label-text text-gray-400">Label (nome do cliente)</span></label>
+                    <input type="text" x-model="newKey.name" placeholder="Ex: João Silva"
                         class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="label"><span class="label-text text-gray-400">Daily Limit</span></label>
-                        <input type="number" x-model="newKey.maxRequestsPerDay" min="1"
-                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
-                    </div>
-                    <div>
-                        <label class="label"><span class="label-text text-gray-400">Monthly Limit</span></label>
-                        <input type="number" x-model="newKey.maxRequestsPerMonth" min="1"
-                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
-                    </div>
                 </div>
                 <div>
-                    <label class="label"><span class="label-text text-gray-400">Expires At (optional)</span></label>
-                    <input type="date" x-model="newKey.expiresAt"
+                    <label class="label"><span class="label-text text-gray-400">Notas internas</span></label>
+                    <textarea x-model="newKey.notes" placeholder="Plano, contato, observações..."
+                        class="textarea textarea-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple h-20"></textarea>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Limite mensal (0 = ∞)</span></label>
+                        <input type="number" x-model="newKey.maxRequestsPerMonth" min="0"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    </div>
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Limite por janela (0 = ∞)</span></label>
+                        <input type="number" x-model="newKey.maxRequestsPerWindow" min="0"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                        <label class="label"><span class="label-text-alt text-gray-500">Mensagens por janela de reset</span></label>
+                    </div>
+                    
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Limite RPM (0 = ∞)</span></label>
+                        <input type="number" x-model="newKey.maxRpm" min="0"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                        <label class="label"><span class="label-text-alt text-gray-500">Máx. requisições por minuto</span></label>
+                    </div>
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Reset a cada X horas (0 = off)</span></label>
+                        <input type="number" x-model="newKey.windowHours" min="0"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    </div>
+
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Máx. Dispositivos (0 = ∞)</span></label>
+                        <input type="number" x-model="newKey.maxDevices" min="0"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    </div>
+                    <div>
+                        <label class="label"><span class="label-text text-gray-400">Expira em (vazio = nunca)</span></label>
+                        <input type="date" x-model="newKey.expiresAt"
+                            class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple text-sm">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="label"><span class="label-text text-gray-400">Webhook URL (vazio = off)</span></label>
+                    <input type="text" x-model="newKey.webhookUrl" placeholder="https://..."
                         class="input input-bordered w-full bg-space-800 text-white border-space-border focus:border-neon-purple">
+                    <label class="label"><span class="label-text-alt text-gray-500">Notificado ao atingir limite</span></label>
                 </div>
             </div>
             <div class="modal-action">
-                <button @click="showCreateModal = false" class="btn btn-ghost">Cancel</button>
-                <button @click="createKey()" class="btn bg-neon-purple hover:bg-neon-purple/80 text-white border-neon-purple/50">
-                    Create Key
+                <button @click="showCreateModal = false" class="btn btn-ghost text-gray-400 hover:text-white">Cancelar</button>
+                <button @click="saveKey()" class="btn bg-neon-green hover:bg-neon-green/80 text-black border-none px-8">
+                    Salvar
                 </button>
             </div>
         </div>
@@ -238,6 +277,15 @@
                         </div>
                     </div>
 
+                    <!-- Devices Connected -->
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-400 mb-2">Dispositivos Conectados</h4>
+                        <div class="bg-black/20 rounded p-3 text-sm text-gray-300">
+                            <span class="font-bold text-neon-cyan" x-text="usageData.activeDevices"></span> 
+                            de <span x-text="usageData.maxDevices === 0 ? '∞' : usageData.maxDevices"></span> permitidos
+                        </div>
+                    </div>
+
                     <!-- By Model -->
                     <template x-if="Object.keys(usageData.byModel || {}).length > 0">
                         <div>
@@ -247,21 +295,6 @@
                                     <div class="flex justify-between text-xs bg-black/20 rounded px-3 py-2">
                                         <span class="text-gray-300 font-mono" x-text="model"></span>
                                         <span class="text-neon-cyan font-bold" x-text="count"></span>
-                                    </div>
-                                </template>
-                            </div>
-                        </div>
-                    </template>
-
-                    <!-- By Day -->
-                    <template x-if="Object.keys(usageData.byDay || {}).length > 0">
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-400 mb-2">By Day</h4>
-                            <div class="space-y-1">
-                                <template x-for="[day, count] in Object.entries(usageData.byDay).sort()" :key="day">
-                                    <div class="flex justify-between text-xs bg-black/20 rounded px-3 py-2">
-                                        <span class="text-gray-300" x-text="day"></span>
-                                        <span class="text-neon-purple font-bold" x-text="count"></span>
                                     </div>
                                 </template>
                             </div>
