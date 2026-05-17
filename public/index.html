@@ -7,6 +7,25 @@
     <title>Antigravity Console</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
 
+    <!-- Early auth check — redirect to login BEFORE loading app scripts -->
+    <script>
+        (function() {
+            var token = localStorage.getItem('antigravity_session_token');
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/api/auth/verify', false); // Synchronous to block rendering
+            if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+            try {
+                xhr.send();
+                var data = JSON.parse(xhr.responseText);
+                if (data.authEnabled && !data.authenticated) {
+                    window.location.href = '/login.html';
+                }
+            } catch(e) {
+                // If verify fails, allow page to load (server might not be ready yet)
+            }
+        })();
+    </script>
+
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Alpine.js must be deferred so stores register their listeners first -->

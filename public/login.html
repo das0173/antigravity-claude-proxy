@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Console — Login</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Login-specific styles (self-contained, no external JS dependencies) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0a0a0f;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Monaco, 'Courier New', monospace;
+            color: #e2e8f0;
+            overflow: hidden;
+        }
+
+        /* Animated background */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(168, 85, 247, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168, 85, 247, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            animation: gridFloat 20s ease-in-out infinite;
+        }
+
+        @keyframes gridFloat {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-10px, -10px); }
+        }
+
+        /* Ambient glow */
+        .ambient-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(150px);
+            opacity: 0.15;
+            pointer-events: none;
+        }
+        .glow-1 {
+            top: -200px;
+            left: -200px;
+            background: #a855f7;
+            animation: pulse1 8s ease-in-out infinite;
+        }
+        .glow-2 {
+            bottom: -200px;
+            right: -200px;
+            background: #3b82f6;
+            animation: pulse2 10s ease-in-out infinite;
+        }
+
+        @keyframes pulse1 {
+            0%, 100% { opacity: 0.1; transform: scale(1); }
+            50% { opacity: 0.2; transform: scale(1.1); }
+        }
+        @keyframes pulse2 {
+            0%, 100% { opacity: 0.1; transform: scale(1); }
+            50% { opacity: 0.15; transform: scale(1.05); }
+        }
+
+        /* Login card */
+        .login-card {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 420px;
+            padding: 40px;
+            background: rgba(15, 15, 25, 0.85);
+            border: 1px solid rgba(168, 85, 247, 0.15);
+            border-radius: 16px;
+            backdrop-filter: blur(20px);
+            box-shadow: 
+                0 0 60px rgba(0, 0, 0, 0.5),
+                0 0 120px rgba(168, 85, 247, 0.05),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            animation: cardAppear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes cardAppear {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Logo */
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 32px;
+        }
+
+        .logo-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #a855f7, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.5px;
+            box-shadow: 0 0 30px rgba(168, 85, 247, 0.4);
+            margin-bottom: 16px;
+            animation: logoGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes logoGlow {
+            0%, 100% { box-shadow: 0 0 30px rgba(168, 85, 247, 0.3); }
+            50% { box-shadow: 0 0 50px rgba(168, 85, 247, 0.5), 0 0 80px rgba(168, 85, 247, 0.2); }
+        }
+
+        .logo-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: white;
+        }
+
+        .logo-subtitle {
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(75, 85, 99, 0.3);
+            border-radius: 10px;
+            color: #e2e8f0;
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            border-color: rgba(168, 85, 247, 0.5);
+            box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1), 0 0 20px rgba(168, 85, 247, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: #4b5563;
+        }
+
+        /* Button */
+        .login-btn {
+            width: 100%;
+            padding: 13px 24px;
+            background: linear-gradient(135deg, #a855f7, #7c3aed);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .login-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 30px rgba(168, 85, 247, 0.35);
+        }
+
+        .login-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .login-btn.loading {
+            pointer-events: none;
+        }
+
+        .login-btn.loading .btn-text {
+            opacity: 0;
+        }
+
+        .login-btn.loading .btn-spinner {
+            display: block;
+        }
+
+        .btn-spinner {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        /* Error message */
+        .error-msg {
+            display: none;
+            padding: 10px 14px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            color: #f87171;
+            font-size: 12px;
+            margin-bottom: 16px;
+            animation: shakeIn 0.4s ease;
+        }
+
+        .error-msg.visible {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        @keyframes shakeIn {
+            0% { transform: translateX(-10px); opacity: 0; }
+            25% { transform: translateX(5px); }
+            50% { transform: translateX(-3px); }
+            75% { transform: translateX(1px); }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+
+        .error-icon {
+            flex-shrink: 0;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Security badge */
+        .security-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 24px;
+            font-size: 10px;
+            color: #4b5563;
+            letter-spacing: 1px;
+        }
+
+        .lock-icon {
+            width: 12px;
+            height: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="bg-grid"></div>
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+
+    <!-- Login Card -->
+    <div class="login-card">
+        <!-- Logo -->
+        <div class="logo-container">
+            <div class="logo-icon">AG</div>
+            <div class="logo-title">ANTIGRAVITY</div>
+            <div class="logo-subtitle">CLAUDE PROXY SYSTEM</div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="error-msg">
+            <svg class="error-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span id="errorText"></span>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input 
+                    class="form-input" 
+                    type="text" 
+                    id="username" 
+                    name="username"
+                    placeholder="Enter your username"
+                    autocomplete="username"
+                    required
+                    autofocus
+                >
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <input 
+                    class="form-input" 
+                    type="password" 
+                    id="password"
+                    name="password" 
+                    placeholder="Enter your password"
+                    autocomplete="current-password"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="login-btn" id="loginBtn">
+                <span class="btn-text">AUTHENTICATE</span>
+                <div class="btn-spinner"></div>
+            </button>
+        </form>
+
+        <!-- Security Badge -->
+        <div class="security-badge">
+            <svg class="lock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            ENCRYPTED SESSION · HMAC-SHA256
+        </div>
+    </div>
+
+    <script>
+        // Check if already authenticated
+        (function() {
+            const token = localStorage.getItem('antigravity_session_token');
+            if (token) {
+                fetch('/api/auth/verify', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.authenticated) {
+                        window.location.href = '/';
+                    }
+                })
+                .catch(() => {});
+            }
+        })();
+
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            document.getElementById('errorText').textContent = msg;
+            el.classList.add('visible');
+        }
+
+        function hideError() {
+            document.getElementById('errorMsg').classList.remove('visible');
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            hideError();
+
+            const btn = document.getElementById('loginBtn');
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showError('Please fill in all fields');
+                return;
+            }
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'ok') {
+                    // Store token
+                    localStorage.setItem('antigravity_session_token', data.token);
+                    // Also store for backwards compat with old password system
+                    localStorage.setItem('antigravity_webui_password', password);
+
+                    // Redirect to dashboard with slight delay for visual feedback
+                    btn.innerHTML = '<span class="btn-text" style="opacity:1;color:#22c55e">✓ AUTHENTICATED</span>';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 400);
+                } else {
+                    showError(data.error || 'Authentication failed');
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                showError('Connection failed. Check if the server is running.');
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        // Enter key handling
+        document.getElementById('password').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginForm').requestSubmit();
+            }
+        });
+    </script>
+</body>
+</html>

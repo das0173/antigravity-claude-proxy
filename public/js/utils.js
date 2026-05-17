@@ -3,9 +3,28 @@
  */
 
 window.utils = {
-    // Shared Request Wrapper
+    /**
+     * Get the session token from localStorage
+     * @returns {string|null} Session token
+     */
+    getSessionToken() {
+        return localStorage.getItem('antigravity_session_token');
+    },
+
+    /**
+     * Shared Request Wrapper — uses Bearer token authentication
+     * Automatically redirects to login page on 401 responses.
+     */
     async request(url, options = {}, webuiPassword = '') {
         options.headers = options.headers || {};
+
+        // Attach session token as Bearer auth
+        const token = this.getSessionToken();
+        if (token) {
+            options.headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        // Legacy fallback: also send x-webui-password if available
         if (webuiPassword) {
             options.headers['x-webui-password'] = webuiPassword;
         }
@@ -13,19 +32,11 @@ window.utils = {
         let response = await fetch(url, options);
 
         if (response.status === 401) {
-            const store = Alpine.store('global');
-            const password = prompt(store ? store.t('enterPassword') : 'Enter Web UI Password:');
-            if (password) {
-                // Return new password so caller can update state
-                // This implies we need a way to propagate the new password back
-                // For simplicity in this functional utility, we might need a callback or state access
-                // But generally utils shouldn't probably depend on global state directly if possible
-                // let's stick to the current logic but wrapped
-                localStorage.setItem('antigravity_webui_password', password);
-                options.headers['x-webui-password'] = password;
-                response = await fetch(url, options);
-                return { response, newPassword: password };
-            }
+            // Session expired or invalid — redirect to login
+            localStorage.removeItem('antigravity_session_token');
+            window.location.href = '/login.html';
+            // Return a never-resolving promise to prevent further code execution
+            return new Promise(() => {});
         }
 
         return { response, newPassword: null };
@@ -65,5 +76,21 @@ window.utils = {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    },
+
+    /**
+     * Logout — clear session and redirect to login
+     */
+    logout() {
+        const token = this.getSessionToken();
+        if (token) {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            }).catch(() => {});
+        }
+        localStorage.removeItem('antigravity_session_token');
+        localStorage.removeItem('antigravity_webui_password');
+        window.location.href = '/login.html';
     }
 };

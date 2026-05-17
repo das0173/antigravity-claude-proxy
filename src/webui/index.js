@@ -13,6 +13,7 @@
  */
 
 import path from 'path';
+import crypto from 'crypto';
 import express from 'express';
 import { getPublicConfig, saveConfig, config } from '../config.js';
 import { DEFAULT_PORT, ACCOUNT_CONFIG_PATH, MAX_ACCOUNTS, DEFAULT_PRESETS, DEFAULT_SERVER_PRESETS } from '../constants.js';
@@ -107,30 +108,166 @@ async function addAccount(accountData) {
     await saveAccounts(ACCOUNT_CONFIG_PATH, accounts, settings, activeIndex);
 }
 
+// ============================================================================
+// Session-Based Authentication System
+// ============================================================================
+
+// Server secret for HMAC token generation — generated once per process lifetime
+// Tokens survive page refreshes but expire on server restart (acceptable for this use case)
+const SERVER_SECRET = crypto.randomBytes(32).toString('hex');
+
+// Session tokens: Map<token, { username, createdAt }>
+const activeSessions = new Map();
+
+// Session TTL: 24 hours
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Auth Middleware - Optional password protection for WebUI
- * Password can be set via WEBUI_PASSWORD env var or config.json
+ * Generate a secure session token
+ * @param {string} username - The authenticated username
+ * @returns {string} Session token
+ */
+function generateSessionToken(username) {
+    const timestamp = Date.now().toString();
+    const random = crypto.randomBytes(16).toString('hex');
+    const payload = `${username}:${timestamp}:${random}`;
+    const hmac = crypto.createHmac('sha256', SERVER_SECRET).update(payload).digest('hex');
+    const token = `${Buffer.from(payload).toString('base64url')}.${hmac}`;
+
+    // Store session
+    activeSessions.set(token, { username, createdAt: Date.now() });
+
+    return token;
+}
+
+/**
+ * Validate a session token
+ * @param {string} token - Token to validate
+ * @returns {boolean} True if valid
+ */
+function validateSessionToken(token) {
+    if (!token) return false;
+
+    const session = activeSessions.get(token);
+    if (!session) return false;
+
+    // Check TTL
+    if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+        activeSessions.delete(token);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Get auth credentials from environment or config
+ * @returns {{ username: string|null, password: string|null }}
+ */
+function getAuthCredentials() {
+    return {
+        username: process.env.WEBUI_USERNAME || null,
+        password: process.env.WEBUI_PASSWORD || config.webuiPassword || null
+    };
+}
+
+/**
+ * Check if authentication is enabled
+ * @returns {boolean}
+ */
+function isAuthEnabled() {
+    const { username, password } = getAuthCredentials();
+    return !!(username && password);
+}
+
+/**
+ * Extract bearer token from request
+ * @param {Request} req
+ * @returns {string|null}
+ */
+function extractToken(req) {
+    // Check Authorization header
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        return authHeader.substring(7);
+    }
+    // Check query param (for SSE endpoints)
+    if (req.query.token) {
+        return req.query.token;
+    }
+    // Legacy: check x-webui-password header (backwards compat)
+    const legacyPassword = req.headers['x-webui-password'];
+    if (legacyPassword) {
+        const { password } = getAuthCredentials();
+        if (legacyPassword === password) return '__legacy_password_ok__';
+    }
+    return null;
+}
+
+/**
+ * Auth Middleware — Full page-level authentication gate
+ * Blocks ALL routes (HTML, CSS, JS, APIs) unless authenticated.
+ * Only exceptions: login page, login API, and proxy /v1/* endpoints.
  */
 function createAuthMiddleware() {
     return (req, res, next) => {
-        const password = config.webuiPassword;
-        if (!password) return next();
+        // If auth is not enabled, allow everything
+        if (!isAuthEnabled()) return next();
 
-        // Determine if this path should be protected
-        const isApiRoute = req.path.startsWith('/api/');
-        const isAuthUrl = req.path === '/api/auth/url';
-        const isConfigGet = req.path === '/api/config' && req.method === 'GET';
-        const isProtected = (isApiRoute && !isAuthUrl && !isConfigGet) || req.path === '/account-limits' || req.path === '/health';
+        // Always allow these public paths (no auth needed)
+        const publicPaths = [
+            '/login.html',
+            '/api/auth/login',
+            '/api/auth/verify',
+            '/favicon.svg',
+            '/favicon.ico'
+        ];
 
-        if (isProtected) {
-            const providedPassword = req.headers['x-webui-password'] || req.query.password;
-            if (providedPassword !== password) {
-                return res.status(401).json({ status: 'error', error: 'Unauthorized: Password required' });
-            }
+        // Allow public paths
+        if (publicPaths.includes(req.path)) return next();
+
+        // Allow CSS files needed by login page
+        if (req.path.startsWith('/css/')) return next();
+
+        // Proxy API endpoints (/v1/*) use their own API key auth — don't block them
+        if (req.path.startsWith('/v1/')) return next();
+
+        // Claude Code silent endpoints
+        if (req.path === '/api/event_logging/batch') return next();
+        if (req.method === 'POST' && req.path === '/') return next();
+
+        // Everything else requires a valid session token
+        const token = extractToken(req);
+
+        if (token === '__legacy_password_ok__') {
+            // Legacy password matched
+            return next();
         }
-        next();
+
+        if (token && validateSessionToken(token)) {
+            return next();
+        }
+
+        // Not authenticated
+        // For API routes, return 401 JSON
+        if (req.path.startsWith('/api/') || req.path === '/health' || req.path === '/account-limits') {
+            return res.status(401).json({ status: 'error', error: 'Unauthorized: Authentication required' });
+        }
+
+        // For HTML/page requests, redirect to login
+        return res.redirect('/login.html');
     };
 }
+
+// Cleanup expired sessions periodically (every 10 minutes)
+setInterval(() => {
+    const now = Date.now();
+    for (const [token, session] of activeSessions.entries()) {
+        if (now - session.createdAt > SESSION_TTL_MS) {
+            activeSessions.delete(token);
+        }
+    }
+}, 10 * 60 * 1000);
 
 /**
  * Validate server config fields from user input.
@@ -253,11 +390,104 @@ function validateConfigFields(input) {
  * @param {AccountManager} accountManager - Account manager instance
  */
 export function mountWebUI(app, dirname, accountManager) {
-    // Apply auth middleware
+    // Apply auth middleware BEFORE static files
     app.use(createAuthMiddleware());
 
     // Serve static files from public directory
     app.use(express.static(path.join(dirname, '../public')));
+
+    // Redirect root to login or dashboard based on auth state
+    app.get('/', (req, res, next) => {
+        if (isAuthEnabled()) {
+            const token = extractToken(req);
+            if (!token || !validateSessionToken(token)) {
+                return res.redirect('/login.html');
+            }
+        }
+        // Serve index.html (handled by express.static)
+        next();
+    });
+
+    // ==========================================
+    // Authentication API
+    // ==========================================
+
+    /**
+     * POST /api/auth/login - Authenticate with username and password
+     */
+    app.post('/api/auth/login', (req, res) => {
+        try {
+            const { username, password } = req.body;
+            const creds = getAuthCredentials();
+
+            if (!creds.username || !creds.password) {
+                return res.status(500).json({
+                    status: 'error',
+                    error: 'Authentication not configured. Set WEBUI_USERNAME and WEBUI_PASSWORD environment variables.'
+                });
+            }
+
+            // Constant-time comparison to prevent timing attacks
+            const usernameMatch = username && crypto.timingSafeEqual(
+                Buffer.from(username.padEnd(256, '\0')),
+                Buffer.from(creds.username.padEnd(256, '\0'))
+            );
+            const passwordMatch = password && crypto.timingSafeEqual(
+                Buffer.from(password.padEnd(256, '\0')),
+                Buffer.from(creds.password.padEnd(256, '\0'))
+            );
+
+            if (!usernameMatch || !passwordMatch) {
+                logger.warn(`[WebUI] Failed login attempt from ${req.ip}`);
+                return res.status(401).json({
+                    status: 'error',
+                    error: 'Invalid username or password'
+                });
+            }
+
+            // Generate session token
+            const token = generateSessionToken(username);
+            logger.info(`[WebUI] Successful login from ${req.ip}`);
+
+            res.json({
+                status: 'ok',
+                token,
+                expiresIn: SESSION_TTL_MS
+            });
+        } catch (error) {
+            logger.error('[WebUI] Login error:', error);
+            res.status(500).json({ status: 'error', error: 'Internal server error' });
+        }
+    });
+
+    /**
+     * GET /api/auth/verify - Check if current session token is valid
+     */
+    app.get('/api/auth/verify', (req, res) => {
+        if (!isAuthEnabled()) {
+            return res.json({ status: 'ok', authenticated: true, authEnabled: false });
+        }
+
+        const token = extractToken(req);
+        const valid = token && (token === '__legacy_password_ok__' || validateSessionToken(token));
+
+        res.json({
+            status: 'ok',
+            authenticated: !!valid,
+            authEnabled: true
+        });
+    });
+
+    /**
+     * POST /api/auth/logout - Invalidate session token
+     */
+    app.post('/api/auth/logout', (req, res) => {
+        const token = extractToken(req);
+        if (token && activeSessions.has(token)) {
+            activeSessions.delete(token);
+        }
+        res.json({ status: 'ok', message: 'Logged out' });
+    });
 
     // ==========================================
     // Account Management API

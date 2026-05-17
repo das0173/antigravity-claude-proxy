@@ -67,10 +67,15 @@ window.Components.logsViewer = () => ({
     startLogStream() {
         if (this.eventSource) this.eventSource.close();
 
+        // Build SSE URL with auth token (EventSource doesn't support custom headers)
+        const token = window.utils.getSessionToken();
         const password = Alpine.store('global').webuiPassword;
-        const url = password
-            ? `/api/logs/stream?history=true&password=${encodeURIComponent(password)}`
-            : '/api/logs/stream?history=true';
+        let url = '/api/logs/stream?history=true';
+        if (token) {
+            url += `&token=${encodeURIComponent(token)}`;
+        } else if (password) {
+            url += `&password=${encodeURIComponent(password)}`;
+        }
 
         this.eventSource = new EventSource(url);
         this.eventSource.onmessage = (event) => {

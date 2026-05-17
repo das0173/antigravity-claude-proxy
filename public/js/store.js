@@ -56,7 +56,21 @@ document.addEventListener('alpine:init', () => {
 
         async fetchVersion() {
             try {
-                const response = await fetch('/api/config');
+                const headers = {};
+                const token = localStorage.getItem('antigravity_session_token');
+                if (token) {
+                    headers['Authorization'] = 'Bearer ' + token;
+                }
+
+                const response = await fetch('/api/config', { headers });
+
+                if (response.status === 401) {
+                    // Session expired — redirect to login
+                    localStorage.removeItem('antigravity_session_token');
+                    window.location.href = '/login.html';
+                    return;
+                }
+
                 if (response.ok) {
                     const data = await response.json();
                     if (data.version) {
