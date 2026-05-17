@@ -140,7 +140,16 @@ function generateKeyString() {
  * Generate a device ID from IP + User-Agent
  */
 export function getDeviceId(req) {
-    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    // Extract real IP behind proxies (Railway, Cloudflare, etc)
+    let ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    
+    // Explicit fallback check for x-forwarded-for header (sometimes comma-separated list)
+    const forwardedFor = req.headers['x-forwarded-for'];
+    if (forwardedFor) {
+        // Take the first IP in the list (the original client)
+        ip = forwardedFor.split(',')[0].trim();
+    }
+    
     const ua = req.headers['user-agent'] || 'unknown';
     return crypto.createHash('md5').update(`${ip}::${ua}`).digest('hex').substring(0, 12);
 }

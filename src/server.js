@@ -39,6 +39,9 @@ for (let i = 0; i < args.length; i++) {
 
 const app = express();
 
+// Enable trust proxy to correctly extract client IP behind reverse proxies (like Railway)
+app.set('trust proxy', true);
+
 // Disable x-powered-by header for security
 app.disable('x-powered-by');
 
