@@ -226,8 +226,24 @@ function createAuthMiddleware() {
         // Allow public paths
         if (publicPaths.includes(req.path)) return next();
 
-        // Allow CSS files needed by login page
-        if (req.path.startsWith('/css/')) return next();
+        // Allow ALL static assets through (HTML, JS, CSS, images, fonts)
+        // Static files contain no sensitive data — the client-side auth check
+        // in index.html prevents the app from fetching/rendering any data.
+        // We MUST allow these because browser navigations (window.location.href)
+        // don't send Authorization headers — only fetch/XHR does.
+        if (req.path.startsWith('/css/') ||
+            req.path.startsWith('/js/') ||
+            req.path.startsWith('/views/') ||
+            req.path.startsWith('/images/') ||
+            req.path.endsWith('.html') ||
+            req.path.endsWith('.js') ||
+            req.path.endsWith('.css') ||
+            req.path.endsWith('.svg') ||
+            req.path.endsWith('.png') ||
+            req.path.endsWith('.ico') ||
+            req.path === '/') {
+            return next();
+        }
 
         // Proxy API endpoints (/v1/*) use their own API key auth — don't block them
         if (req.path.startsWith('/v1/')) return next();
@@ -236,7 +252,7 @@ function createAuthMiddleware() {
         if (req.path === '/api/event_logging/batch') return next();
         if (req.method === 'POST' && req.path === '/') return next();
 
-        // Everything else requires a valid session token
+        // Everything else (API routes) requires a valid session token
         const token = extractToken(req);
 
         if (token === '__legacy_password_ok__') {
@@ -248,14 +264,8 @@ function createAuthMiddleware() {
             return next();
         }
 
-        // Not authenticated
-        // For API routes, return 401 JSON
-        if (req.path.startsWith('/api/') || req.path === '/health' || req.path === '/account-limits') {
-            return res.status(401).json({ status: 'error', error: 'Unauthorized: Authentication required' });
-        }
-
-        // For HTML/page requests, redirect to login
-        return res.redirect('/login.html');
+        // Not authenticated — return 401 for API routes
+        return res.status(401).json({ status: 'error', error: 'Unauthorized: Authentication required' });
     };
 }
 
